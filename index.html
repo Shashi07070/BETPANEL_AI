@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Betting Admin Dashboard</title>
+
+<!-- Tailwind CSS -->
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Font Awesome for icons -->
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<style>
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+
+body {
+
+font-family: 'Inter', sans-serif;
+
+background-color: #f3f4f6;
+
+}
+
+
+/* Custom scrollbar for better aesthetics */
+
+::-webkit-scrollbar {
+
+width: 8px;
+
+}
+
+
+::-webkit-scrollbar-track {
+
+background: #e5e7eb;
+
+border-radius: 10px;
+
+}
+
+
+::-webkit-scrollbar-thumb {
+
+background: #9ca3af;
+
+border-radius: 10px;
+
+}
+
+
+::-webkit-scrollbar-thumb:hover {
+
+background: #6b7280;
+
+}
+
+
+.no-scrollbar::-webkit-scrollbar {
+
+display: none;
+
+}
+
+
+.no-scrollbar {
+
+-ms-overflow-style: none;
+
+scrollbar-width: none;
+
+}
+
+
+/* Hide the default number input arrows */
+
+input[type=number]::-webkit-inner-spin-button,
+
+input[type=number]::-webkit-outer-spin-button {
+
+-webkit-appearance: none;
+
+margin: 0;
+
+}
+
+
+/* Modal backdrop */
+
+.modal-backdrop {
+
+background-color: rgba(0, 0, 0, 0.5);
+
+z-index: 99;
+
+}
+
+
+/* Modal content */
+
+.modal-content {
+
+animation: fadeIn 0.3s ease-out;
+
+z-index: 100;
+
+}
+
+
+@keyframes fadeIn {
+
+from {
+
+opacity: 0;
+
+transform: scale(0.9);
+
+}
+
+
+to {
+
+opacity: 1;
+
+transform: scale(1);
+
+}
+
+}
+
+</style>
+
+</head>
+
+
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+
+<!-- Firebase SDKs -->
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+
+// Global variables provided by the environment
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+
+let db = null;
+
+let auth = null;
+
+let app = null;
+
+
+// Main application data state
+
+let players = [];
+
+let matches = [];
+
+let bets = [];
+
+let history = [];
+
+let currentUserId = '';
+
+let appDocRef = null;
+
+
+/**
+
+* Initializes the application by setting up Firebase.
+
+*/
+
+const initializeFirebase = () => {
+
+try {
+
+app = initializeApp(firebaseConfig);
+
+auth = getAuth(app);
+
+db = getFirestore(app);
+
+} catch (e) {
+
+console.error("Error initializing Firebase:", e);
+
+showError("Error connecting to Firebase. Please try again.");
+
+}
+
+};
+
+
+/**
+
+* Sets up the real-time Firestore listener and loads data.
+
+*/
+
+const setupFirestoreListener = () => {
+
+if (!auth.currentUser || !db) {
+
+console.error("Authentication not ready or DB not initialized.");
+
+return;
+
+}
+
+
+currentUserId = auth.currentUser.uid;
+
+// The secure and persistent path for user-specific data
+
+appDocRef = doc(db, `artifacts/${appId}/users/${currentUserId}/betting_data/app_state`);
+
+
+onSnapshot(appDocRef, (docSnap) => {
+
+if (docSnap.exists()) {
+
+const data = docSnap.data();
+
+players = data.players || [];
+
+matches = data.matches || [];
+
+bets = data.bets || [];
+
+history = data.history || [];
+
+renderPlayers();
+
+renderMatches();
+
+renderHistory();
+
+renderPlaceBetForm();
+
+} else {
+
+// Document doesn't exist, create it with initial data
+
+const initialData = {
+
+players: [],
+
+matches: [],
+
+bets: [],
+
+history: []
+
+};
+
+setDoc(appDocRef, initialData)
+
+.then(() => console.log("Initial document created."))
+
+.catch(e => console.error("Error creating document:", e));
+
+}
+
+}, (error) => {
+
+console.error("Error listening to Firestore:", error);
+
+showError("Could not connect to the database. Please check your network connection.");
+
+});
+
+};
+
+
+// Initialize Firebase on window load
+
+window.onload = () => {
+
+initializeFirebase();
+
+if (auth) {
+
+// Wait for the authentication state to be ready
+
+onAuthStateChanged(auth, async (user) => {
+
+if (user) {
+
+console.log("User signed in:", user.uid);
+
+// User is authenticated, proceed with Firestore operations
+
+document.getElementById('loading-overlay').classList.add('hidden');
+
+setupFirestoreListener();
+
+} else {
+
+console.log("User is signed out or anonymous. Attempting sign-in...");
+
+try {
+
+if (initialAuthToken) {
+
+await signInWithCustomToken(auth, initialAuthToken);
+
+} else {
+
+await signInAnonymously(auth);
+
+}
+
+} catch (e) {
+
+console.error("Authentication failed:", e);
+
+showError("Authentication failed. Please try again.");
+
+}
+
+}
+
+});
+
+}
+
+};
+
+
+/**
+
+* Updates the Firestore document with the latest application state.
+
+*/
+
+const updateFirestore = async () => {
+
+if (!db || !appDocRef) {
+
+console.error("Firestore DB or document reference is not initialized.");
+
+return;
+
+}
+
+const dataToSave = { players, matches, bets, history };
+
+try {
+
+await setDoc(appDocRef, dataToSave);
+
+console.log("Firestore updated successfully.");
+
+} catch (e) {
+
+console.error("Error updating Firestore:", e);
+
+showError("Failed to save data. Please check your network.");
+
+}
+
+};
+
+
+/**
+
+* Logs an action to the history array and updates Firestore.
+
+* @param {string} action - The description of the action.
+
+* @param {object} details - The detailed data for the log.
+
+*/
+
+const logAction = (action, details) => {
+
+const newLog = {
+
+timestamp: new Date().toISOString(),
+
+action,
+
+details,
+
+adminId: currentUserId
+
+};
+
+history.unshift(newLog); // Add to the beginning of the array
+
+updateFirestore();
+
+};
+
+
+/**
+
+* Renders the player list in the players section.
+
+*/
+
+const renderPlayers = () => {
+
+const playerListDiv = document.getElementById('player-list');
+
+playerListDiv.innerHTML = '';
+
+if (players.length === 0) {
+
+playerListDiv.innerHTML = `<p class="text-center text-gray-500 py-4">No players added yet.</p>`;
+
+return;
+
+}
+
+
+const table = document.createElement('table');
+
+table.className = 'w-full text-left table-auto';
+
+table.innerHTML = `
+
+<thead>
+
+<tr class="bg-gray-200">
+
+<th class="p-4 rounded-tl-lg">S.No</th>
+
+<th class="p-4">Name</th>
+
+<th class="p-4">Balance</th>
+
+<th class="p-4 rounded-tr-lg">Actions</th>
+
+</tr>
+
+</thead>
+
+<tbody id="player-table-body">
+
+</tbody>
+
+`;
+
+
+const tbody = table.querySelector('#player-table-body');
+
+players.forEach((player, index) => {
+
+const tr = document.createElement('tr');
+
+tr.className = 'border-b border-gray-200 hover:bg-gray-50 transition-colors';
+
+tr.innerHTML = `
+
+<td class="p-4">${index + 1}</td>
+
+<td class="p-4" data-dp="${player.dpNumber}">${player.name}</td>
+
+<td class="p-4">₹${player.balance.toFixed(2)}</td>
+
+<td class="p-4">
+
+<div class="flex space-x-2">
+
+<button class="deposit-btn bg-green-500 hover:bg-green-600 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center transition-transform transform hover:scale-110" data-id="${player.dpNumber}" title="Deposit">
+
+<i class="fas fa-plus"></i>
+
+</button>
+
+<button class="withdrawal-btn bg-red-500 hover:bg-red-600 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center transition-transform transform hover:scale-110" data-id="${player.dpNumber}" title="Withdrawal">
+
+<i class="fas fa-minus"></i>
+
+</button>
+
+</div>
+
+</td>
+
+`;
+
+tbody.appendChild(tr);
+
+});
+
+playerListDiv.appendChild(table);
+
+
+document.querySelectorAll('.deposit-btn').forEach(button => {
+
+button.addEventListener('click', (e) => showAmountModal(e.currentTarget.dataset.id, 'deposit'));
+
+});
+
+
+document.querySelectorAll('.withdrawal-btn').forEach(button => {
+
+button.addEventListener('click', (e) => showAmountModal(e.currentTarget.dataset.id, 'withdrawal'));
+
+});
+
+};
+
+
+/**
+
+* Renders the matches list.
+
+*/
+
+const renderMatches = () => {
+
+const matchesDiv = document.getElementById('matches-list');
+
+matchesDiv.innerHTML = '';
+
+if (matches.length === 0) {
+
+matchesDiv.innerHTML = `<p class="text-center text-gray-500 py-4">No matches added yet.</p>`;
+
+return;
+
+}
+
+
+const activeMatches = matches.filter(m => m.status === 'active');
+
+const settledMatches = matches.filter(m => m.status === 'settled');
+
+
+matchesDiv.innerHTML = `
+
+<div class="space-y-6">
+
+<div>
+
+<h3 class="text-xl font-semibold text-gray-700 mb-4">Active Matches</h3>
+
+${activeMatches.length > 0 ? `
+
+<div class="bg-white rounded-xl shadow-lg p-6 space-y-4">
+
+${activeMatches.map(m => `
+
+<div class="flex flex-col sm:flex-row items-center justify-between p-4 bg-gray-50 rounded-lg">
+
+<div class="text-sm font-medium text-gray-600">${m.teamA} vs ${m.teamB}</div>
+
+<div class="text-sm font-medium text-gray-600">Odds: ${m.teamA}:${m.odds[m.teamA]} - ${m.teamB}:${m.odds[m.teamB]}</div>
+
+<div class="flex items-center space-x-2 mt-2 sm:mt-0">
+
+<button onclick="showSettleModal('${m.id}')" class="bg-blue-500 hover:bg-blue-600 text-white text-sm px-4 py-2 rounded-full transition-colors">Settle Match</button>
+
+</div>
+
+</div>
+
+`).join('')}
+
+</div>
+
+` : `<p class="text-center text-gray-500">No active matches.</p>`}
+
+</div>
+
+
+<div>
+
+<h3 class="text-xl font-semibold text-gray-700 mb-4">Settled Matches</h3>
+
+${settledMatches.length > 0 ? `
+
+<div class="bg-white rounded-xl shadow-lg p-6 space-y-4">
+
+${settledMatches.map(m => `
+
+<div class="flex flex-col sm:flex-row items-center justify-between p-4 bg-gray-50 rounded-lg">
+
+<div class="text-sm font-medium text-gray-600">${m.teamA} vs ${m.teamB}</div>
+
+<span class="text-sm font-bold text-green-600 mt-2 sm:mt-0">Winner: ${m.winner}</span>
+
+</div>
+
+`).join('')}
+
+</div>
+
+` : `<p class="text-center text-gray-500">No settled matches.</p>`}
+
+</div>
+
+</div>
+
+`;
+
+};
+
+
+/**
+
+* Renders the history/record book.
+
+*/
+
+const renderHistory = () => {
+
+const historyDiv = document.getElementById('history-table-body');
+
+historyDiv.innerHTML = '';
+
+if (history.length === 0) {
+
+historyDiv.innerHTML = `<p class="text-center text-gray-500 py-4 col-span-4">No records yet.</p>`;
+
+return;
+
+}
+
+
+history.forEach(log => {
+
+const tr = document.createElement('tr');
+
+tr.className = 'border-b border-gray-200 hover:bg-gray-50 transition-colors';
+
+const date = new Date(log.timestamp);
+
+const formattedDate = date.toLocaleDateString();
+
+const formattedTime = date.toLocaleTimeString();
+
+
+tr.innerHTML = `
+
+<td class="p-4">${formattedDate} ${formattedTime}</td>
+
+<td class="p-4 font-medium">${log.action}</td>
+
+<td class="p-4 text-gray-600">${JSON.stringify(log.details)}</td>
+
+`;
+
+historyDiv.appendChild(tr);
+
+});
+
+};
+
+
+/**
+
+* Renders the player and match options in the place bet form.
+
+*/
+
+const renderPlaceBetForm = () => {
+
+const playerSelect = document.getElementById('bet-player');
+
+const matchSelect = document.getElementById('bet-match');
+
+
+// Clear previous options
+
+playerSelect.innerHTML = '<option value="">Select Player</option>';
+
+matchSelect.innerHTML = '<option value="">Select Match</option>';
+
+
+players.forEach(player => {
+
+const option = document.createElement('option');
+
+option.value = player.dpNumber;
+
+option.textContent = player.name;
+
+playerSelect.appendChild(option);
+
+});
+
+
+matches.filter(m => m.status === 'active').forEach(match => {
+
+const option = document.createElement('option');
+
+option.value = match.id;
+
+option.textContent = `${match.teamA} vs ${match.teamB}`;
+
+option.dataset.teamA = match.teamA;
+
+option.dataset.teamB = match.teamB;
+
+matchSelect.appendChild(option);
+
+});
+
+};
+
+
+/**
+
+* Handles the login logic.
+
+* @param {Event} e - The form submission event.
+
+*/
+
+document.getElementById('login-form').addEventListener('submit', (e) => {
+
+e.preventDefault();
+
+const username = document.getElementById('username').value;
+
+const password = document.getElementById('password').value;
+
+
+const credentials = {
+
+'masterkey': 'masterpass789',
+
+'rootadmin': 'rootaccess!@#',
+
+'sysop': 'operatorXYZ'
+
+};
+
+
+if (credentials[username] === password) {
+
+document.getElementById('login-screen').classList.add('hidden');
+
+document.getElementById('dashboard-container').classList.remove('hidden');
+
+} else {
+
+showError("Invalid username or password.");
+
+}
+
+});
+
+
+/**
+
+* Event listener for the navigation buttons.
+
+*/
+
+document.querySelectorAll('.nav-btn').forEach(button => {
+
+button.addEventListener('click', () => {
+
+document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('bg-gray-700', 'text-white'));
+
+button.classList.add('bg-gray-700', 'text-white');
+
+
+document.querySelectorAll('.content-section').forEach(section => section.classList.add('hidden'));
+
+const target = button.dataset.target;
+
+document.getElementById(target).classList.remove('hidden');
+
+});
+
+});
+
+
+/**
+
+* Shows the modal for depositing or withdrawing an amount.
+
+* @param {string} dpNumber - The DP number of the player.
+
+* @param {string} type - 'deposit' or 'withdrawal'.
+
+*/
+
+const showAmountModal = (dpNumber, type) => {
+
+const player = players.find(p => p.dpNumber === dpNumber);
+
+if (!player) return;
+
+
+const modal = document.getElementById('amount-modal');
+
+const title = document.getElementById('modal-title');
+
+const input = document.getElementById('amount-input');
+
+const submitBtn = document.getElementById('modal-submit-btn');
+
+
+title.textContent = `${type === 'deposit' ? 'Deposit' : 'Withdrawal'} for ${player.name}`;
+
+input.value = '';
+
+submitBtn.dataset.type = type;
+
+submitBtn.dataset.dp = dpNumber;
+
+
+modal.classList.remove('hidden');
+
+};
+
+
+/**
+
+* Closes the amount modal.
+
+*/
+
+document.getElementById('amount-modal-close').addEventListener('click', () => {
+
+document.getElementById('amount-modal').classList.add('hidden');
+
+});
+
+
+/**
+
+* Handles the deposit/withdrawal submission from the modal.
+
+*/
+
+document.getElementById('modal-submit-btn').addEventListener('click', () => {
+
+const amountInput = document.getElementById('amount-input');
+
+const amount = parseFloat(amountInput.value);
+
+const dpNumber = amountInput.dataset.dp;
+
+const type = amountInput.dataset.type;
+
+
+if (isNaN(amount) || amount <= 0) {
+
+showError("Please enter a valid amount.");
+
+return;
+
+}
+
+
+const playerIndex = players.findIndex(p => p.dpNumber === dpNumber);
+
+if (playerIndex === -1) {
+
+showError("Player not found.");
+
+return;
+
+}
+
+
+if (type === 'deposit') {
+
+players[playerIndex].balance += amount;
+
+logAction('Deposit', { player: players[playerIndex].name, amount });
+
+} else if (type === 'withdrawal') {
+
+if (players[playerIndex].balance < amount) {
+
+showError("Insufficient balance for withdrawal.");
+
+return;
+
+}
+
+players[playerIndex].balance -= amount;
+
+logAction('Withdrawal', { player: players[playerIndex].name, amount });
+
+}
+
+document.getElementById('amount-modal').classList.add('hidden');
+
+});
+
+
+/**
+
+* Adds a new player to the list.
+
+*/
+
+document.getElementById('add-player-form').addEventListener('submit', (e) => {
+
+e.preventDefault();
+
+const name = document.getElementById('new-player-name').value.trim();
+
+const balance = parseFloat(document.getElementById('initial-balance').value);
+
+
+if (!name || isNaN(balance)) {
+
+showError("Please enter a valid name and initial balance.");
+
+return;
+
+}
+
+
+const dpNumber = `DP-${(players.length + 1).toString().padStart(3, '0')}`;
+
+const newPlayer = {
+
+name,
+
+dpNumber,
+
+balance
+
+};
+
+players.push(newPlayer);
+
+logAction('Player Added', { name, dpNumber, balance });
+
+e.target.reset();
+
+});
+
+
+/**
+
+* Handles the "View All Balances" button click.
+
+*/
+
+document.getElementById('view-balances-btn').addEventListener('click', () => {
+
+const balancesText = players.map(p => `${p.name}: ₹${p.balance.toFixed(2)}`).join('\n');
+
+const textarea = document
+
